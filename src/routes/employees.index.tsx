@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Eye, MoreHorizontal, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
+import { isAxiosError } from "axios";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +39,18 @@ export const Route = createFileRoute("/employees/")({
 
 const PAGE_SIZE = 8;
 
+function extractErrorMessage(err: unknown): string {
+  if (isAxiosError(err)) {
+    const data = err.response?.data;
+    if (data?.message) return data.message as string;
+    if (typeof data === "object" && data) {
+      const firstFieldError = Object.values(data)[0];
+      if (typeof firstFieldError === "string") return firstFieldError;
+    }
+  }
+  return "Something went wrong. Please try again.";
+}
+
 function EmployeesPage() {
   const { employees, departments, loading, isAdmin, deleteEmployee } = useApp();
   const [query, setQuery] = useState("");
@@ -46,6 +59,7 @@ function EmployeesPage() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<Employee | null>(null);
   const [toDelete, setToDelete] = useState<Employee | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -61,6 +75,20 @@ function EmployeesPage() {
   const current = Math.min(page, pageCount);
   const rows = filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
   const deptName = (id: string) => departments.find((d) => d.id === id)?.name;
+
+  async function confirmDelete() {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      await deleteEmployee(toDelete.id);
+      toast.success("Employee deleted");
+      setToDelete(null);
+    } catch (err) {
+      toast.error(extractErrorMessage(err));
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <AppShell
@@ -252,14 +280,8 @@ function EmployeesPage() {
         open={!!toDelete}
         onOpenChange={(v) => !v && setToDelete(null)}
         title={`Remove ${toDelete?.name ?? ""}?`}
-        description="This employee will be removed from the directory and unassigned from their projects."
-        onConfirm={() => {
-          if (toDelete) {
-            deleteEmployee(toDelete.id);
-            toast.success("Employee deleted");
-            setToDelete(null);
-          }
-        }}
+        description="This employee and any projects assigned to them will be permanently deleted. This action cannot be undone."
+        onConfirm={confirmDelete}
       />
     </AppShell>
   );

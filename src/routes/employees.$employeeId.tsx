@@ -2,6 +2,7 @@ import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { ArrowLeft, CalendarDays, FolderKanban, Mail, MapPin, Pencil, Plus, Trash2, Wallet } from "lucide-react";
+import { isAxiosError } from "axios";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Avatar3, ConfirmDialog, DeptBadge, EmptyState, ListSkeleton } from "@/components/ui-bits";
@@ -22,6 +23,18 @@ export const Route = createFileRoute("/employees/$employeeId")({
   component: EmployeeDetailPage,
 });
 
+function extractErrorMessage(err: unknown): string {
+  if (isAxiosError(err)) {
+    const data = err.response?.data;
+    if (data?.message) return data.message as string;
+    if (typeof data === "object" && data) {
+      const firstFieldError = Object.values(data)[0];
+      if (typeof firstFieldError === "string") return firstFieldError;
+    }
+  }
+  return "Something went wrong. Please try again.";
+}
+
 function InfoTile({ icon: Icon, label, value }: { icon: typeof Mail; label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-xl bg-muted/60 p-4">
@@ -41,9 +54,24 @@ function EmployeeDetailPage() {
   const [projectOpen, setProjectOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [toDelete, setToDelete] = useState<Project | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const employee = employees.find((e) => e.id === employeeId);
   const assigned = projects.filter((p) => p.employeeId === employeeId);
+
+  async function confirmDelete() {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      await deleteProject(toDelete.id);
+      toast.success("Project deleted");
+      setToDelete(null);
+    } catch (err) {
+      toast.error(extractErrorMessage(err));
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -195,13 +223,7 @@ function EmployeeDetailPage() {
         onOpenChange={(v) => !v && setToDelete(null)}
         title={`Delete ${toDelete?.name ?? ""}?`}
         description="This project will be permanently removed. This action cannot be undone."
-        onConfirm={() => {
-          if (toDelete) {
-            deleteProject(toDelete.id);
-            toast.success("Project deleted");
-            setToDelete(null);
-          }
-        }}
+        onConfirm={confirmDelete}
       />
     </AppShell>
   );
