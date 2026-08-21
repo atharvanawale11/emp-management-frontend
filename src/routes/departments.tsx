@@ -61,7 +61,10 @@ function DepartmentsPage() {
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return toast.error("Department name is required");
+    if (!name.trim()) {
+      toast.error("Department name is required");
+      return;
+    }
     if (editing) {
       updateDepartment({ ...editing, name: name.trim(), description: description.trim() });
       toast.success("Department updated successfully");

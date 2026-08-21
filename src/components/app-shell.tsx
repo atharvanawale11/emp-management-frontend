@@ -208,8 +208,8 @@ export function AppShell({
                 </SheetContent>
               </Sheet>
               <div className="min-w-0">
-                <h2 className="truncate font-display text-base font-semibold sm:text-lg">{title}</h2>
-                {description && <p className="hidden truncate text-xs text-muted-foreground sm:block">{description}</p>}
+                <h2 className="truncate font-display text-base font-semibold lg:hidden">{title}</h2>
+                <p className="hidden truncate text-sm text-muted-foreground lg:block">{description ?? title}</p>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -239,7 +239,7 @@ export function AppShell({
         </header>
 
         <main className="mx-auto w-full max-w-[1400px] px-4 pb-28 pt-6 sm:px-6 lg:pb-12">
-          {(actions || description) && (
+          {(
             <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
               <div className="min-w-0">
                 <h1 className="truncate font-display text-2xl font-semibold sm:text-3xl">{title}</h1>

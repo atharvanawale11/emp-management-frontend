@@ -38,7 +38,7 @@ export function RoleBadge({ role }: { role: Role }) {
   );
 }
 
-export function DeptBadge({ name }: { name?: string }) {
+export function DeptBadge({ name }: { name?: string | undefined }) {
   if (!name) return <span className="text-sm text-muted-foreground">Unassigned</span>;
   return (
     <Badge variant="outline" className="rounded-full border-border/70 bg-secondary px-2.5 py-0.5 font-medium">
