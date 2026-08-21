@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { ArrowRight, Loader2, Lock, ShieldCheck, Sparkles, User } from "lucide-react";
+import { isAxiosError } from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,11 +21,20 @@ export const Route = createFileRoute("/")({
   component: LoginPage,
 });
 
+function extractErrorMessage(err: unknown): string {
+  if (isAxiosError(err)) {
+    if (err.response?.status === 401) return "Invalid username or password";
+    const data = err.response?.data;
+    if (data?.message) return data.message as string;
+  }
+  return "Login failed. Please try again.";
+}
+
 function LoginPage() {
   const { login, user, loading } = useApp();
   const navigate = useNavigate();
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("password");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -33,13 +43,17 @@ function LoginPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!username.trim() || !password) {
+      toast.error("Username and password are required");
+      return;
+    }
     setSubmitting(true);
     try {
-      const u = await login(username, password);
+      const u = await login(username.trim(), password);
       toast.success(`Welcome back, ${u.username}`);
       navigate({ to: "/dashboard", replace: true });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Login failed");
+      toast.error(extractErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -60,9 +74,7 @@ function LoginPage() {
             <Sparkles className="size-3.5" /> Welcome back
           </div>
           <h1 className="mt-4 text-3xl font-semibold">Sign in to Atlas</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Use a username starting with <span className="font-medium text-foreground">admin</span> for the admin view.
-          </p>
+          <p className="mt-2 text-sm text-muted-foreground">Sign in with your account to continue.</p>
 
           <form onSubmit={onSubmit} className="mt-8 space-y-5">
             <div className="space-y-2">

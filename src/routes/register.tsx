@@ -2,6 +2,7 @@ import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { ArrowRight, Loader2, Lock, User } from "lucide-react";
+import { isAxiosError } from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +23,18 @@ export const Route = createFileRoute("/register")({
   component: RegisterPage,
 });
 
+function extractErrorMessage(err: unknown): string {
+  if (isAxiosError(err)) {
+    const data = err.response?.data;
+    if (data?.message) return data.message as string;
+    if (typeof data === "object" && data) {
+      const firstFieldError = Object.values(data)[0];
+      if (typeof firstFieldError === "string") return firstFieldError;
+    }
+  }
+  return "Registration failed. Please try again.";
+}
+
 function RegisterPage() {
   const { register } = useApp();
   const navigate = useNavigate();
@@ -32,13 +45,17 @@ function RegisterPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!username.trim() || !password) {
+      toast.error("Username and password are required");
+      return;
+    }
     setSubmitting(true);
     try {
-      const u = await register(username, password, role);
+      const u = await register(username.trim(), password, role);
       toast.success(`Account created — welcome, ${u.username}`);
       navigate({ to: "/dashboard", replace: true });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Registration failed");
+      toast.error(extractErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
