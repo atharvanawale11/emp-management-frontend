@@ -1,14 +1,22 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { seedDepartments, seedEmployees, seedProjects } from "./mock-data";
 import type { Department, Employee, Project, Role, User } from "./types";
+import {
+  loginApi,
+  registerApi,
+  fetchDepartments,
+  createDepartmentApi,
+  updateDepartmentApi,
+  deleteDepartmentApi,
+  fetchEmployees,
+  createEmployeeApi,
+  updateEmployeeApi,
+  deleteEmployeeApi,
+  fetchProjects,
+  createProjectApi,
+  updateProjectApi,
+  deleteProjectApi,
+} from "./api";
 
-/**
- * Client-side mock store. Mirrors the shape of the future Spring Boot REST API
- * (JWT in localStorage, resources fetched per entity) so wiring real calls later
- * only means swapping the bodies of these functions for fetch() requests.
- */
-
-const STORAGE_KEY = "atlas.state.v1";
 const AUTH_KEY = "atlas.auth.v1";
 
 interface AppState {
@@ -25,58 +33,59 @@ interface AppContextValue extends AppState {
   login: (username: string, password: string) => Promise<User>;
   register: (username: string, password: string, role: Role) => Promise<User>;
   logout: () => void;
-  addDepartment: (d: Omit<Department, "id">) => void;
-  updateDepartment: (d: Department) => void;
-  deleteDepartment: (id: string) => void;
-  addEmployee: (e: Omit<Employee, "id">) => void;
-  updateEmployee: (e: Employee) => void;
-  deleteEmployee: (id: string) => void;
-  addProject: (p: Omit<Project, "id">) => void;
-  updateProject: (p: Project) => void;
-  deleteProject: (id: string) => void;
+  addDepartment: (d: Omit<Department, "id">) => Promise<void>;
+  updateDepartment: (d: Department) => Promise<void>;
+  deleteDepartment: (id: string) => Promise<void>;
+  addEmployee: (e: Omit<Employee, "id">) => Promise<void>;
+  updateEmployee: (e: Employee) => Promise<void>;
+  deleteEmployee: (id: string) => Promise<void>;
+  addProject: (p: Omit<Project, "id">) => Promise<void>;
+  updateProject: (p: Project) => Promise<void>;
+  deleteProject: (id: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
 
-const initialState: AppState = {
-  departments: seedDepartments,
-  employees: seedEmployees,
-  projects: seedProjects,
-};
-
-const uid = () => Math.random().toString(36).slice(2, 10);
-
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AppState>(initialState);
+  const [state, setState] = useState<AppState>({ departments: [], employees: [], projects: [] });
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // On mount: restore auth from localStorage, then load real data if logged in
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setState(JSON.parse(raw) as AppState);
-      const auth = localStorage.getItem(AUTH_KEY);
-      if (auth) {
-        const parsed = JSON.parse(auth) as { user: User; token: string };
+    const raw = localStorage.getItem(AUTH_KEY);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as { user: User; token: string };
         setUser(parsed.user);
         setToken(parsed.token);
+      } catch {
+        localStorage.removeItem(AUTH_KEY);
       }
-    } catch {
-      /* ignore corrupted storage */
     }
-    const t = setTimeout(() => setLoading(false), 650);
-    return () => clearTimeout(t);
+    setLoading(false);
   }, []);
 
+  // Whenever we have a token (fresh login or restored session), fetch real data
   useEffect(() => {
-    if (loading) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      /* storage unavailable */
-    }
-  }, [state, loading]);
+    if (!token) return;
+    (async () => {
+      setLoading(true);
+      try {
+        const [departments, employees, projects] = await Promise.all([
+          fetchDepartments(),
+          fetchEmployees(),
+          fetchProjects(),
+        ]);
+        setState({ departments, employees, projects });
+      } catch (err) {
+        console.error("Failed to load data:", err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [token]);
 
   const persistAuth = useCallback((next: { user: User; token: string } | null) => {
     if (next) {
@@ -87,31 +96,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem(AUTH_KEY);
       setUser(null);
       setToken(null);
+      setState({ departments: [], employees: [], projects: [] });
     }
   }, []);
 
   const login = useCallback<AppContextValue["login"]>(
     async (username, password) => {
-      await new Promise((r) => setTimeout(r, 700));
-      if (!username.trim() || password.length < 4) {
-        throw new Error("Invalid username or password");
-      }
-      const role: Role = username.trim().toLowerCase().startsWith("admin") ? "ADMIN" : "EMPLOYEE";
-      const next = { user: { id: uid(), username: username.trim(), role }, token: `mock.jwt.${uid()}` };
-      persistAuth(next);
-      return next.user;
+      const { user, token } = await loginApi(username, password);
+      persistAuth({ user, token });
+      return user;
     },
     [persistAuth],
   );
 
   const register = useCallback<AppContextValue["register"]>(
     async (username, password, role) => {
-      await new Promise((r) => setTimeout(r, 800));
-      if (username.trim().length < 3) throw new Error("Username must be at least 3 characters");
-      if (password.length < 4) throw new Error("Password must be at least 4 characters");
-      const next = { user: { id: uid(), username: username.trim(), role }, token: `mock.jwt.${uid()}` };
-      persistAuth(next);
-      return next.user;
+      const { user, token } = await registerApi(username, password, role);
+      persistAuth({ user, token });
+      return user;
     },
     [persistAuth],
   );
@@ -128,26 +130,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
       login,
       register,
       logout,
-      addDepartment: (d) => setState((s) => ({ ...s, departments: [{ ...d, id: uid() }, ...s.departments] })),
-      updateDepartment: (d) =>
-        setState((s) => ({ ...s, departments: s.departments.map((x) => (x.id === d.id ? d : x)) })),
-      deleteDepartment: (id) =>
-        setState((s) => ({
-          ...s,
-          departments: s.departments.filter((x) => x.id !== id),
-          employees: s.employees.map((e) => (e.departmentId === id ? { ...e, departmentId: "" } : e)),
-        })),
-      addEmployee: (e) => setState((s) => ({ ...s, employees: [{ ...e, id: uid() }, ...s.employees] })),
-      updateEmployee: (e) => setState((s) => ({ ...s, employees: s.employees.map((x) => (x.id === e.id ? e : x)) })),
-      deleteEmployee: (id) =>
-        setState((s) => ({
-          ...s,
-          employees: s.employees.filter((x) => x.id !== id),
-          projects: s.projects.map((p) => (p.employeeId === id ? { ...p, employeeId: null } : p)),
-        })),
-      addProject: (p) => setState((s) => ({ ...s, projects: [{ ...p, id: uid() }, ...s.projects] })),
-      updateProject: (p) => setState((s) => ({ ...s, projects: s.projects.map((x) => (x.id === p.id ? p : x)) })),
-      deleteProject: (id) => setState((s) => ({ ...s, projects: s.projects.filter((x) => x.id !== id) })),
+
+      addDepartment: async (d) => {
+        const created = await createDepartmentApi(d);
+        setState((s) => ({ ...s, departments: [created, ...s.departments] }));
+      },
+      updateDepartment: async (d) => {
+        const updated = await updateDepartmentApi(d);
+        setState((s) => ({ ...s, departments: s.departments.map((x) => (x.id === updated.id ? updated : x)) }));
+      },
+      deleteDepartment: async (id) => {
+        await deleteDepartmentApi(id);
+        setState((s) => ({ ...s, departments: s.departments.filter((x) => x.id !== id) }));
+      },
+
+      addEmployee: async (e) => {
+        const created = await createEmployeeApi(e);
+        setState((s) => ({ ...s, employees: [created, ...s.employees] }));
+      },
+      updateEmployee: async (e) => {
+        const updated = await updateEmployeeApi(e);
+        setState((s) => ({ ...s, employees: s.employees.map((x) => (x.id === updated.id ? updated : x)) }));
+      },
+      deleteEmployee: async (id) => {
+        await deleteEmployeeApi(id);
+        setState((s) => ({ ...s, employees: s.employees.filter((x) => x.id !== id) }));
+      },
+
+      addProject: async (p) => {
+        const created = await createProjectApi(p);
+        setState((s) => ({ ...s, projects: [created, ...s.projects] }));
+      },
+      updateProject: async (p) => {
+        const updated = await updateProjectApi(p);
+        setState((s) => ({ ...s, projects: s.projects.map((x) => (x.id === updated.id ? updated : x)) }));
+      },
+      deleteProject: async (id) => {
+        await deleteProjectApi(id);
+        setState((s) => ({ ...s, projects: s.projects.filter((x) => x.id !== id) }));
+      },
     }),
     [state, loading, user, token, login, register, logout],
   );
