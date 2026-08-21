@@ -7,8 +7,21 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useApp } from "@/lib/app-store";
 import type { Employee } from "@/lib/types";
+import { isAxiosError } from "axios";
 
 const empty = { name: "", email: "", designation: "", departmentId: "", salary: "", dateOfJoining: "" };
+
+function extractErrorMessage(err: unknown): string {
+  if (isAxiosError(err)) {
+    const data = err.response?.data;
+    if (data?.message) return data.message as string;
+    if (typeof data === "object" && data) {
+      const firstFieldError = Object.values(data)[0];
+      if (typeof firstFieldError === "string") return firstFieldError;
+    }
+  }
+  return "Something went wrong. Please try again.";
+}
 
 export function EmployeeFormSheet({
   open,
@@ -21,6 +34,7 @@ export function EmployeeFormSheet({
 }) {
   const { departments, addEmployee, updateEmployee } = useApp();
   const [form, setForm] = useState(empty);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -40,10 +54,14 @@ export function EmployeeFormSheet({
 
   const set = (key: keyof typeof empty, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim() || !form.email.trim()) {
       toast.error("Name and email are required");
+      return;
+    }
+    if (!form.departmentId) {
+      toast.error("Please select a department");
       return;
     }
     const payload = {
@@ -54,14 +72,22 @@ export function EmployeeFormSheet({
       salary: Number(form.salary) || 0,
       dateOfJoining: form.dateOfJoining || new Date().toISOString().slice(0, 10),
     };
-    if (employee) {
-      updateEmployee({ ...employee, ...payload });
-      toast.success("Employee updated successfully");
-    } else {
-      addEmployee(payload);
-      toast.success("Employee added successfully");
+
+    setSubmitting(true);
+    try {
+      if (employee) {
+        await updateEmployee({ ...employee, ...payload });
+        toast.success("Employee updated successfully");
+      } else {
+        await addEmployee(payload);
+        toast.success("Employee added successfully");
+      }
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(extractErrorMessage(err));
+    } finally {
+      setSubmitting(false);
     }
-    onOpenChange(false);
   }
 
   return (
@@ -112,11 +138,11 @@ export function EmployeeFormSheet({
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" className="rounded-xl" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" className="rounded-xl" onClick={() => onOpenChange(false)} disabled={submitting}>
               Cancel
             </Button>
-            <Button type="submit" className="rounded-xl accent-gradient text-primary-foreground">
-              {employee ? "Save changes" : "Add employee"}
+            <Button type="submit" className="rounded-xl accent-gradient text-primary-foreground" disabled={submitting}>
+              {submitting ? "Saving..." : employee ? "Save changes" : "Add employee"}
             </Button>
           </div>
         </form>

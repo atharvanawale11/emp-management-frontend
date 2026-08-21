@@ -14,8 +14,21 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useApp } from "@/lib/app-store";
 import type { Project } from "@/lib/types";
+import { isAxiosError } from "axios";
 
 const UNASSIGNED = "unassigned";
+
+function extractErrorMessage(err: unknown): string {
+  if (isAxiosError(err)) {
+    const data = err.response?.data;
+    if (data?.message) return data.message as string;
+    if (typeof data === "object" && data) {
+      const firstFieldError = Object.values(data)[0];
+      if (typeof firstFieldError === "string") return firstFieldError;
+    }
+  }
+  return "Something went wrong. Please try again.";
+}
 
 export function ProjectFormDialog({
   open,
@@ -33,6 +46,7 @@ export function ProjectFormDialog({
   const [location, setLocation] = useState("");
   const [startDate, setStartDate] = useState("");
   const [employeeId, setEmployeeId] = useState<string>(UNASSIGNED);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -42,26 +56,38 @@ export function ProjectFormDialog({
     setEmployeeId(project?.employeeId ?? defaultEmployeeId ?? UNASSIGNED);
   }, [open, project, defaultEmployeeId]);
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) {
       toast.error("Project name is required");
+      return;
+    }
+    if (employeeId === UNASSIGNED) {
+      toast.error("Please assign an employee — projects must have an owner");
       return;
     }
     const payload = {
       name: name.trim(),
       location: location.trim() || "Remote",
       startDate: startDate || new Date().toISOString().slice(0, 10),
-      employeeId: employeeId === UNASSIGNED ? null : employeeId,
+      employeeId,
     };
-    if (project) {
-      updateProject({ ...project, ...payload });
-      toast.success("Project updated successfully");
-    } else {
-      addProject(payload);
-      toast.success("Project added successfully");
+
+    setSubmitting(true);
+    try {
+      if (project) {
+        await updateProject({ ...project, ...payload });
+        toast.success("Project updated successfully");
+      } else {
+        await addProject(payload);
+        toast.success("Project added successfully");
+      }
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(extractErrorMessage(err));
+    } finally {
+      setSubmitting(false);
     }
-    onOpenChange(false);
   }
 
   return (
@@ -95,7 +121,9 @@ export function ProjectFormDialog({
                 <SelectValue placeholder="Select employee" />
               </SelectTrigger>
               <SelectContent className="rounded-xl">
-                <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                <SelectItem value={UNASSIGNED} disabled>
+                  Select an employee
+                </SelectItem>
                 {employees.map((e) => (
                   <SelectItem key={e.id} value={e.id}>
                     {e.name}
@@ -105,11 +133,11 @@ export function ProjectFormDialog({
             </Select>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" className="rounded-xl" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" className="rounded-xl" onClick={() => onOpenChange(false)} disabled={submitting}>
               Cancel
             </Button>
-            <Button type="submit" className="rounded-xl accent-gradient text-primary-foreground">
-              {project ? "Save changes" : "Add project"}
+            <Button type="submit" className="rounded-xl accent-gradient text-primary-foreground" disabled={submitting}>
+              {submitting ? "Saving..." : project ? "Save changes" : "Add project"}
             </Button>
           </DialogFooter>
         </form>
