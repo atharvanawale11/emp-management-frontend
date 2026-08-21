@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { CalendarDays, FolderKanban, MapPin, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { isAxiosError } from "axios";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +29,18 @@ export const Route = createFileRoute("/projects")({
   component: ProjectsPage,
 });
 
+function extractErrorMessage(err: unknown): string {
+  if (isAxiosError(err)) {
+    const data = err.response?.data;
+    if (data?.message) return data.message as string;
+    if (typeof data === "object" && data) {
+      const firstFieldError = Object.values(data)[0];
+      if (typeof firstFieldError === "string") return firstFieldError;
+    }
+  }
+  return "Something went wrong. Please try again.";
+}
+
 const PAGE_SIZE = 9;
 
 function ProjectsPage() {
@@ -37,6 +50,7 @@ function ProjectsPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Project | null>(null);
   const [toDelete, setToDelete] = useState<Project | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -47,6 +61,20 @@ function ProjectsPage() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const current = Math.min(page, pageCount);
   const rows = filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
+
+  async function confirmDelete() {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      await deleteProject(toDelete.id);
+      toast.success("Project deleted");
+      setToDelete(null);
+    } catch (err) {
+      toast.error(extractErrorMessage(err));
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <AppShell
@@ -189,13 +217,7 @@ function ProjectsPage() {
         onOpenChange={(v) => !v && setToDelete(null)}
         title={`Delete ${toDelete?.name ?? ""}?`}
         description="This project will be permanently removed. This action cannot be undone."
-        onConfirm={() => {
-          if (toDelete) {
-            deleteProject(toDelete.id);
-            toast.success("Project deleted");
-            setToDelete(null);
-          }
-        }}
+        onConfirm={confirmDelete}
       />
     </AppShell>
   );
